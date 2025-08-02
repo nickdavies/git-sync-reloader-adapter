@@ -4,7 +4,7 @@ use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::Json,
-    routing::patch,
+    routing::post,
 };
 use clap::Parser;
 use k8s_openapi::api::core::v1::ConfigMap;
@@ -94,7 +94,7 @@ async fn main() -> Result<()> {
 
     // Build the application router
     let app = Router::new()
-        .route("/webhook/:namespace/:configmap", patch(handle_webhook))
+        .route("/webhook/:namespace/:configmap", post(handle_webhook))
         .with_state(state);
 
     // Start the server
@@ -177,10 +177,9 @@ async fn update_configmap(
         .await
         .context("failed to load current config map value")?;
     let current_hash = current
-        .metadata
-        .annotations
+        .data
         .as_ref()
-        .and_then(|ann| ann.get("git-sync-hash"))
+        .and_then(|data| data.get("git-hash"))
         .map(|s| s.as_str());
 
     if current_hash == Some(git_hash) {
@@ -188,14 +187,12 @@ async fn update_configmap(
         return Ok(false);
     }
 
-    // Create the patch to update annotations
-    let mut annotations = BTreeMap::new();
-    annotations.insert("git-sync-hash".to_string(), git_hash.to_string());
+    // Create the patch to update data
+    let mut data = BTreeMap::new();
+    data.insert("git-hash".to_string(), git_hash.to_string());
 
     let patch = json!({
-        "metadata": {
-            "annotations": annotations
-        }
+        "data": data
     });
 
     let patch_params = PatchParams::apply("git-sync-webhook-adapter");
